@@ -1,0 +1,268 @@
+indexnext |previous |OpenCV 2.3.2 documentation ? OpenCV用户指南 ?
+级联分类器训练
+介绍
+级联分类器包括两部分：训练和检测。 检测部分在OpenCV objdetect 模块的文档中有介绍，在那文档中给出了一些级联分类器的基本介绍。这个指南是描述如何训练分类器：准备训练数据和运行训练程序。
+
+重点注意事项
+OpenCV中有两个程序可以训练级联分类器： opencv_haartraining and opencv_traincascade``。 ``opencv_traincascade 是一个新程序，使用OpenCV 2.x API 以C++ 编写。这二者主要的区别是 opencv_traincascade 支持 Haar [Viola2001] 和 LBP [Liao2007] (Local Binary Patterns) 两种特征，并易于增加其他的特征。与Haar特征相比，LBP特征是整数特征，因此训练和检测过程都会比Haar特征快几倍。LBP和Haar特征用于检测的准确率，是依赖训练过程中的训练数据的质量和训练参数。训练一个与基于Haar特征同样准确度的LBP的分类器是可能的。
+
+opencv_traincascade and opencv_haartraining 所输出的分类器文件格式并不相同。注意，新的级联检测接口（参考 objdetect 模块中的 CascadeClassifier 类）支持这两种格式。 opencv_traincascade 可以旧格式导出选练好的级联分类器。但是在训练过程被中断后再重启训练过程， opencv_traincascade and opencv_haartraining 不能装载与中断前不同的文件格式。
+
+opencv_traincascade 程序使用TBB来处理多线程。如果希望使用多核并行运算加速，请使用TBB来编译OpenCV。
+
+还有一些与训练相关的辅助程序。
+
+opencv_createsamples 用来准备训练用的正样本数据和测试数据。 opencv_createsamples 能够生成能被 opencv_haartraining 和 opencv_traincascade 程序支持的正样本数据。它的输出为以 *.vec 为扩展名的文件，该文件以二进制方式存储图像。
+opencv_performance 可以用来评估分类器的质量，但只能评估 opencv_haartraining 输出的分类器。它读入一组标注好的图像，运行分类器并报告性能，如检测到物体的数目，漏检的数目，误检的数目，以及其他信息。
+既然 opencv_haartraining 是一个将被弃用的程序，下面将不再介绍，而会主要介绍 opencv_traincascade 。 opencv_createsamples 程序用来为 opencv_traincascade 准备训练样本，因此也会介绍它。
+
+准备训练数据?
+训练需要一些列样本。样本分两类：负样本和正样本。负样本是指不包括物体的图像。正样本是待检测的物体的图像。负样本必须手工准备，正样本使用 opencv_createsamples 创建。
+
+负样本
+负样本可以是任意图像，但是这些图像中不能包含待检测的物体。用于抠取负样本的图像文件名被列在一个文件中。这个文件是纯文本文件，每行是一个文件名（包括相对目录和文件名）。负样本和样本图像也叫做背景样本，或者背景样本图像，本文档中对之不予区分。这些图像可以是不同的尺寸，但是图像尺寸应该比训练窗口的尺寸大，因为这些图像将被用于抠取负样本，并将负样本缩小到训练窗口大小。
+
+下面是一个描述文件的例子：
+
+假如目录结构如下：
+
+/img
+  img1.jpg
+  img2.jpg
+bg.txt
+则bg.txt文件中的内容将如下所示：
+
+img/img1.jpg
+img/img2.jpg
+正样本
+正样本由 opencv_createsamples 生成。正样本可以由包含待检测物体的一张图片生成，也可由一系列标记好的图像生成。
+
+请注意你需要一个很大的负样本库送给训练程序进行训练。如果是绝对刚性的物体，如OpenCV的标志，你只有一张正样本图像；如果是人脸，你需要几百甚至几千个正样本。在待检测物体是人脸的情况下，你需要考虑所有的人种、年龄、表情甚至胡子的样式。
+
+如果只有一张包含物体的图像，如一个公司的标志，那么可以通过对物体图像的随机旋转、改变标志亮度以及将标志放在任意的背景上而获得大量的正样本。生成的正样本数目以及随机的程度都可以通过 opencv_createsamples 的命令行参数控制。
+
+命令行参数：
+
+-vec <vec_file_name>
+
+输出文件，内含用于训练的正样本。
+
+-img <image_file_name>
+
+输入图像文件名（例如一个公司的标志）。
+
+-bg <background_file_name>
+
+背景图像的描述文件，文件中包含一系列的图像文件名，这些图像将被随机选作物体的背景。
+
+-num <number_of_samples>
+
+生成的正样本的数目。
+
+-bgcolor <background_color>
+
+背景颜色（目前为灰度图）；背景颜色表示透明颜色。因为图像压缩可造成颜色偏差，颜色的容差可以由 -bgthresh 指定。所有处于 bgcolor-bgthresh 和 bgcolor+bgthresh 之间的像素都被设置为透明像素。
+
+-bgthresh <background_color_threshold>
+
+-inv
+
+如果指定该标志，前景图像的颜色将翻转。
+
+-randinv
+
+如果指定该标志，颜色将随机地翻转。
+
+-maxidev <max_intensity_deviation>
+
+前景样本里像素的亮度梯度的最大值。
+
+-maxxangle <max_x_rotation_angle>
+
+X轴最大旋转角度，必须以弧度为单位。
+
+-maxyangle <max_y_rotation_angle>
+
+Y轴最大旋转角度，必须以弧度为单位。
+
+-maxzangle <max_z_rotation_angle>
+
+Z轴最大旋转角度，必须以弧度为单位。
+
+-show
+
+很有用的调试选项。如果指定该选项，每个样本都将被显示。如果按下 Esc 键，程序将继续创建样本但不再显示。
+
+-w <sample_width>
+
+输出样本的宽度（以像素为单位）。
+
+-h <sample_height>
+
+输出样本的高度（以像素为单位）。
+
+创建样本的流程如下： 输入图像沿着三个轴随机旋转。旋转的角度由 -max?angle 限定。然后像素的亮度值位于 [bg_color-bg_color_threshold; bg_color+bg_color_threshold]范围的像素被设置为透明像素。将白噪声加到前景图像上。如果指定了 -inv ，那么前景图像的颜色将被翻转。如果指定了 -randinv ，程序将随机选择是否将颜色进行翻转。任选背景图像，将获得的前景图像放到背景图像上，并将图像调整到 -w 和 -h 指定的大小。最后将图像存入vec文件，vec文件名由命令行参数 -vec 指定。
+
+正样本也可从一系列事先标记好的图像中创建。标记信息可以存储于一个文本文件，与背景描述文件类似。文件中的每行对应一个图像文件。每行的第一个元素为图像文件名，后面是物体的数目，最后是物体位置和大小的描述 (x, y, width, height)。
+
+下面是描述文件的例子：
+
+假设目录结构如下：
+
+/img
+  img_with_faces_1.jpg
+  img_with_faces_2.jpg
+info.dat
+文件info.dat里的内容如下：
+
+img/img_with_faces_1.jpg  1  140 100 45 45
+img/img_with_faces_2.jpg  2  100 200 50 50   50 30 25 25
+图像img_with_faces_1.jpg中包含一个物体实例（如人脸），标示其在图像中的位置和大小的矩形为(140, 100, 45, 45)。图像img_with_faces_2.jpg包含两个物体实例。
+
+从这样的一系列数据中创建正样本，需要在命令行指定 -info 而非前面所用的 -img 参数：
+
+-info <collection_file_name>
+
+描述物体所在图像以及大小位置的描述文件。
+
+此部分样本创建过程如下：将物体实例从图像中抠取出，然后将之调整尺寸到目标尺寸，然后保存到输出的vec文件。在此过程中不会对图像进行变形，所以有效的命令行参数仅有 -w, -h, -show 和 -num 。
+
+opencv_createsamples 也可以用来查看和检查保存于vec正样本文件中的正样本。这时只需指定 -vec ， -w 和 -h 三个参数则可。 opencv_createsamples 将逐一显示正样本图像。
+
+在训练中，训练程序并不关心包含正样本的vec文件如何生成的，你可以自己写程序来生成vec文件。但是OpenCV提供的工具中，只有 opencv_createsamples 程序能够创建包含正样本的vec文件。
+
+一个vec文件的例子位于 opencv/data/vec_files/trainingfaces_24-24.vec 。它可用来训练人脸分类器，窗口大小为： -w 24 -h 24 。
+
+训练级联分类器
+下一步是训练分类器。如前面所述， opencv_traincascade 和 opencv_haartraining 都可用来训练一个级联分类器，但是此处只介绍 opencv_traincascade 。 opencv_haartraining 的用法与 opencv_traincascade 类似。
+
+下面是 opencv_traincascade 的命令行参数，以用途分组介绍：
+
+通用参数：
+
+-data <cascade_dir_name>
+
+目录名，如不存在训练程序会创建它，用于存放训练好的分类器。
+
+-vec <vec_file_name>
+
+包含正样本的vec文件名（由 opencv_createsamples 程序生成）。
+
+-bg <background_file_name>
+
+背景描述文件，也就是包含负样本文件名的那个描述文件。
+
+-numPos <number_of_positive_samples>
+
+每级分类器训练时所用的正样本数目。
+
+-numNeg <number_of_negative_samples>
+
+每级分类器训练时所用的负样本数目，可以大于 -bg 指定的图片数目。
+
+-numStages <number_of_stages>
+
+训练的分类器的级数。
+
+-precalcValBufSize <precalculated_vals_buffer_size_in_Mb>
+
+缓存大小，用于存储预先计算的特征值(feature values)，单位为MB。
+
+-precalcIdxBufSize <precalculated_idxs_buffer_size_in_Mb>
+
+缓存大小，用于存储预先计算的特征索引(feature indices)，单位为MB。内存越大，训练时间越短。
+
+-baseFormatSave
+
+这个参数仅在使用Haar特征时有效。如果指定这个参数，那么级联分类器将以老的格式存储。
+
+级联参数：
+
+-stageType <BOOST(default)>
+
+级别（stage）参数。目前只支持将BOOST分类器作为级别的类型。
+
+-featureType<{HAAR(default), LBP}>
+
+特征的类型： HAAR - 类Haar特征； LBP - 局部纹理模式特征。
+
+-w <sampleWidth>
+
+-h <sampleHeight>
+
+训练样本的尺寸（单位为像素）。必须跟训练样本创建（使用 opencv_createsamples 程序创建）时的尺寸保持一致。
+
+Boosted分类器参数：
+
+-bt <{DAB, RAB, LB, GAB(default)}>
+
+Boosted分类器的类型： DAB - Discrete AdaBoost, RAB - Real AdaBoost, LB - LogitBoost, GAB - Gentle AdaBoost。
+
+-minHitRate <min_hit_rate>
+
+分类器的每一级希望得到的最小检测率。总的检测率大约为 min_hit_rate^number_of_stages。
+
+-maxFalseAlarmRate <max_false_alarm_rate>
+
+分类器的每一级希望得到的最大误检率。总的误检率大约为 max_false_alarm_rate^number_of_stages.
+
+-weightTrimRate <weight_trim_rate>
+
+Specifies whether trimming should be used and its weight. 一个还不错的数值是0.95。
+
+-maxDepth <max_depth_of_weak_tree>
+
+弱分类器树最大的深度。一个还不错的数值是1，是二叉树（stumps）。
+
+-maxWeakCount <max_weak_tree_count>
+
+每一级中的弱分类器的最大数目。The boosted classifier (stage) will have so many weak trees (<=maxWeakCount), as needed to achieve the given -maxFalseAlarmRate.
+
+类Haar特征参数：
+
+-mode <BASIC (default) | CORE | ALL>
+
+选择训练过程中使用的Haar特征的类型。 BASIC 只使用右上特征， ALL 使用所有右上特征和45度旋转特征。更多细节请参考 [Rainer2002] 。
+
+LBP特征参数：
+
+LBP特征无参数。
+
+当 opencv_traincascade 程序训练结束以后，训练好的级联分类器将存储于文件cascade.xml中，这个文件位于 -data 指定的目录中。这个目录中的其他文件是训练的中间结果，当训练程序被中断后，再重新运行训练程序将读入之前的训练结果，而不需从头重新训练。训练结束后，你可以删除这些中间文件。
+
+训练结束后，你就可以测试你训练好的级联分类器了！
+
+[Viola2001]	Paul Viola, Michael Jones. Rapid Object Detection using a Boosted Cascade of Simple Features. Conference on Computer Vision and Pattern Recognition (CVPR), 2001, pp. 511-518.
+[Rainer2002]	Rainer Lienhart and Jochen Maydt. An Extended Set of Haar-like Features for Rapid Object Detection. Submitted to ICIP2002.
+[Liao2007]	Shengcai Liao, Xiangxin Zhu, Zhen Lei, Lun Zhang and Stan Z. Li. Learning Multi-scale Block Local Binary Patterns for Face Recognition. International Conference on Biometrics (ICB), 2007, pp. 828-837.
+翻译
+于仕琪 http://www.opencv.org.cn
+
+Help and Feedback
+You did not find what you were looking for?
+Ask a question in the user group/mailing list.
+If you think something is missing or wrong in the documentation, please file a bug report.
+Table Of Contents
+级联分类器训练
+介绍
+重点注意事项
+准备训练数据
+负样本
+正样本
+训练级联分类器
+翻译
+Previous topic
+HighGUI
+
+Next topic
+OpenCV 教程
+
+This Page
+Show Source
+Quick search
+
+  Go
+Enter search terms or a module, class or function name.
+
+indexnext |previous |OpenCV 2.3.2 documentation ? OpenCV用户指南 ?
+? Copyright 2011, opencv dev team. Last updated on Mar 30, 2012. Created using Sphinx 1.1.3.
